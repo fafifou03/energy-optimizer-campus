@@ -1,0 +1,12 @@
+# Assets not counted as programming languages
+*.png linguist-vendored
+*.jpg linguist-vendored
+*.jpeg linguist-vendored
+*.svg linguist-vendored
+*.webp linguist-vendored
+
+# Build / lock files
+package-lock.json linguist-generated
+
+# Avoid CSS dominating the repository language stats
+*.css linguist-vendored
