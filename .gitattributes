@@ -1,20 +1,24 @@
-# Assets not counted
+# Ignore all CSS from GitHub language statistics
+*.css linguist-vendored
+**/*.css linguist-vendored
+
+# Ignore assets
 *.png linguist-vendored
 *.jpg linguist-vendored
 *.jpeg linguist-vendored
 *.svg linguist-vendored
 *.webp linguist-vendored
 
-# Generated / lock files
+# Ignore generated / lock files
 package-lock.json linguist-generated
 *.tsbuildinfo linguist-generated
 
-# Do not let styles dominate
-frontend/src/styles/*.css linguist-vendored
-frontend/src/styles/**/*.css linguist-vendored
-
-# Keep Python and TypeScript visible
-backend/**/*.py linguist-detectable=true
-frontend/src/**/*.ts linguist-detectable=true
-frontend/src/**/*.tsx linguist-detectable=true
-frontend/index.html linguist-detectable=true
+# Keep main languages detectable
+*.py linguist-detectable=true
+**/*.py linguist-detectable=true
+*.ts linguist-detectable=true
+**/*.ts linguist-detectable=true
+*.tsx linguist-detectable=true
+**/*.tsx linguist-detectable=true
+*.html linguist-detectable=true
+**/*.html linguist-detectable=true
