@@ -1,0 +1,65 @@
+:root {
+  --font-sans: Inter, "SF Pro Display", "Segoe UI", Arial, sans-serif;
+
+  --color-canvas: #050506;
+  --surface-black: #050506;
+  --color-surface-1: #0b0c0d;
+  --color-surface-2: #141619;
+  --color-hairline: rgba(237, 239, 240, 0.105);
+  --color-hairline-strong: rgba(237, 239, 240, 0.18);
+  --color-text: #edeff0;
+  --text-primary: #f4f6f6;
+  --color-text-soft: #c7ccce;
+  --text-secondary: #b8bfc1;
+  --color-muted: #a5aaad;
+  --color-faint: #686d70;
+  --color-energy: #54d6b4;
+  --accent-cyan: #54d6d6;
+  --accent-emerald: #63d99e;
+  --accent-amber: #e8c46d;
+  --accent-blue: #7fb7ff;
+  --accent-violet: #a6a1ff;
+  --color-weather: #7fb7ff;
+  --color-occupancy: #63d99e;
+  --color-daylight: #e8c46d;
+  --color-hvac: #54d6b4;
+  --color-ventilation: #a6b8ff;
+  --color-equipment: #c2a4ff;
+  --hero-overlay:
+    radial-gradient(circle at 74% 22%, rgba(232, 196, 109, 0.16), transparent 25%),
+    radial-gradient(circle at 16% 66%, rgba(84, 214, 214, 0.2), transparent 28%),
+    linear-gradient(90deg, rgba(5, 5, 6, 0.96) 0%, rgba(5, 5, 6, 0.54) 42%, rgba(5, 5, 6, 0.76) 100%),
+    linear-gradient(180deg, rgba(5, 5, 6, 0.32) 0%, rgba(5, 5, 6, 0.18) 44%, #050506 100%);
+  --display-gradient: linear-gradient(110deg, #ffffff 0%, #dce8e9 28%, #7fded0 52%, #d8e5ff 70%, #e8c46d 96%);
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  --curve-primary: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-apple: cubic-bezier(0.16, 1, 0.3, 1);
+  --curve-slow: cubic-bezier(0.45, 0, 0.55, 1);
+  --duration-fast: 160ms;
+  --duration-med: 360ms;
+  --duration-slow: 720ms;
+  --duration-cinematic: 1200ms;
+  --ease-premium: cubic-bezier(0.22, 1, 0.36, 1);
+  --laser-cyan: #5eebff;
+  --laser-green: #4ce6a7;
+  --laser-amber: #ffb45c;
+  --glow-cyan: rgba(84, 214, 214, 0.22);
+  --glow-emerald: rgba(99, 217, 158, 0.2);
+  --glow-amber: rgba(232, 196, 109, 0.2);
+  --glow-waste: rgba(232, 85, 85, 0.18);
+}
