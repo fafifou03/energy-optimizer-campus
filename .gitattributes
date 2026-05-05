@@ -1,0 +1,26 @@
+# Ignore assets from language statistics
+*.png linguist-vendored
+*.jpg linguist-vendored
+*.jpeg linguist-vendored
+*.svg linguist-vendored
+*.webp linguist-vendored
+
+# Ignore generated / dependency files
+package-lock.json linguist-generated
+*.tsbuildinfo linguist-generated
+
+# Ignore CSS so it does not dominate the repository
+*.css linguist-vendored
+**/*.css linguist-vendored
+
+# Ignore heavy React UI files, but keep TypeScript logic/types visible
+*.tsx linguist-vendored
+**/*.tsx linguist-vendored
+
+# Keep Python visible and counted
+*.py linguist-detectable=true
+**/*.py linguist-detectable=true
+
+# Keep TypeScript visible through .ts files only
+*.ts linguist-detectable=true
+**/*.ts linguist-detectable=true
