@@ -1,12 +1,20 @@
-# Assets not counted as programming languages
+# Assets not counted
 *.png linguist-vendored
 *.jpg linguist-vendored
 *.jpeg linguist-vendored
 *.svg linguist-vendored
 *.webp linguist-vendored
 
-# Build / lock files
+# Generated / lock files
 package-lock.json linguist-generated
+*.tsbuildinfo linguist-generated
 
-# Avoid CSS dominating the repository language stats
-*.css linguist-vendored
+# Do not let styles dominate
+frontend/src/styles/*.css linguist-vendored
+frontend/src/styles/**/*.css linguist-vendored
+
+# Keep Python and TypeScript visible
+backend/**/*.py linguist-detectable=true
+frontend/src/**/*.ts linguist-detectable=true
+frontend/src/**/*.tsx linguist-detectable=true
+frontend/index.html linguist-detectable=true
