@@ -121,7 +121,7 @@ const engineActions = ["Prioriser le confort", "Limiter les consommations inutil
 
 type Signal = (typeof baseSignals)[number];
 
-type TimeRange = "week" | "season" | "year";
+type TimeRange = "week" | "month" | "year";
 
 type LaserPulse = {
   id: number;
@@ -190,6 +190,19 @@ const sanitizeSimulationRequest = (payload: SimulationRequest): SimulationReques
   ),
   eco_mode: payload.eco_mode,
 });
+
+const areSimulationRequestsEqual = (left: SimulationRequest, right: SimulationRequest) =>
+  left.room_count === right.room_count &&
+  left.average_people_per_room === right.average_people_per_room &&
+  left.presence_rate === right.presence_rate &&
+  left.weather_profile === right.weather_profile &&
+  left.kwh_price === right.kwh_price &&
+  left.active_weeks === right.active_weeks &&
+  left.deployment_rate === right.deployment_rate &&
+  left.diversity_factor === right.diversity_factor &&
+  left.prudence_factor === right.prudence_factor &&
+  left.random_seed === right.random_seed &&
+  left.eco_mode === right.eco_mode;
 
 const roomRoleLabel: Record<string, string> = {
   room_1: "scénario défavorable",
@@ -367,24 +380,30 @@ export const App = () => {
   const [result, setResult] = useState<SimulationResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
-  const [selectedRoom, setSelectedRoom] = useState("room_3");
   const [activeRange, setActiveRange] = useState<TimeRange>("week");
   const [activeSignalId, setActiveSignalId] = useState(baseSignals[0].id);
   const [hoveredSignalId, setHoveredSignalId] = useState<string | null>(null);
   const [pinnedSignalId, setPinnedSignalId] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState("garde");
   const signalSectionRef = useRef<HTMLElement | null>(null);
+  const simulationRunIdRef = useRef(0);
 
   const runSimulation = async (payload: SimulationRequest) => {
+    const runId = simulationRunIdRef.current + 1;
+    simulationRunIdRef.current = runId;
     const safePayload = sanitizeSimulationRequest(payload);
-    setRequest(safePayload);
+    setRequest((current) => (areSimulationRequestsEqual(current, safePayload) ? current : safePayload));
     setIsLoading(true);
     setApiError(null);
     try {
       const response = await simulateCampus(safePayload);
-      setResult(response);
-      setSelectedRoom((current) => response.rooms.find((room) => room.id === current)?.id ?? "room_3");
+      if (simulationRunIdRef.current === runId) {
+        setResult(response);
+      }
     } catch (error) {
+      if (simulationRunIdRef.current !== runId) {
+        return;
+      }
       const message = error instanceof Error ? error.message : apiErrorMessage;
       const isNetworkError = message.toLowerCase().includes("failed to fetch") || message.toLowerCase().includes("network");
       setApiError(
@@ -395,17 +414,22 @@ export const App = () => {
             : message,
       );
     } finally {
-      setIsLoading(false);
+      if (simulationRunIdRef.current === runId) {
+        setIsLoading(false);
+      }
     }
   };
 
   useEffect(() => {
-    void runSimulation(defaultSimulationRequest);
-  }, []);
+    const timeout = window.setTimeout(() => {
+      void runSimulation(request);
+    }, result ? 450 : 0);
+
+    return () => window.clearTimeout(timeout);
+  }, [request]);
 
   const currentPoint = result?.chart_points[1] ?? result?.chart_points[0];
   const rooms = result?.rooms ?? [];
-  const classroom = rooms.find((room) => room.id === selectedRoom) ?? rooms[2] ?? rooms[0];
   const standardRoom = rooms.find((room) => room.id === "room_2");
   const optimizedRoom = rooms.find((room) => room.id === "room_3");
   const worstRoom = rooms.find((room) => room.id === "room_1");
@@ -525,35 +549,79 @@ export const App = () => {
       ]
     : [];
 
-  const rangeDivisor =
-    activeRange === "week"
-      ? Math.max(1, result?.metadata.active_weeks ?? request.active_weeks)
-      : activeRange === "season"
-        ? Math.max(1, result?.metadata.season_count ?? 4)
-        : 1;
-  const rangeLabels: Record<TimeRange, { title: string; subtitle: string }> = {
+  const activeWeeks = Math.max(1, result?.metadata.active_weeks ?? request.active_weeks);
+  const periodDivisor = activeRange === "week" ? activeWeeks : activeRange === "month" ? 12 : 1;
+  const periodScale = activeRange === "week" ? 1 : activeRange === "month" ? activeWeeks / 12 : activeWeeks;
+  const rangeLabels: Record<TimeRange, { title: string; shortTitle: string; subtitle: string; oralCue: string }> = {
     week: {
       title: "Semaine active",
-      subtitle: "Lecture ramenée à une semaine simulée de 168 heures.",
+      shortTitle: "Semaine",
+      subtitle: "Lecture directe de la semaine simulée de 168 heures.",
+      oralCue: "Base de démonstration : la même semaine est jouée en standard puis en optimisé.",
     },
-    season: {
-      title: "Saison moyenne",
-      subtitle: "Lecture moyenne par saison pour comparer les contextes météo.",
+    month: {
+      title: "Mois moyen",
+      shortTitle: "Mois",
+      subtitle: "Projection mensuelle à partir des semaines actives configurées.",
+      oralCue: "Utile pour donner un ordre de grandeur facile à retenir pendant la soutenance.",
     },
     year: {
       title: "Année active",
-      subtitle: "Lecture annuelle avec les semaines actives configurées.",
+      shortTitle: "Année",
+      subtitle: "Projection annuelle sur les semaines actives du campus.",
+      oralCue: "Chiffre de conclusion : l'impact campus prudent, après déploiement, foisonnement et prudence.",
     },
   };
   const activeRangeLabel = rangeLabels[activeRange];
-  const rangeProjection = result
+  const periodComparison = result
     ? {
-        energy: result.summary.annual_savings_kwh / rangeDivisor,
-        eur: result.summary.annual_savings_eur / rangeDivisor,
-        co2: result.summary.co2_saved_kg / rangeDivisor,
-        campus: result.summary.realistic_campus_gain_eur / rangeDivisor,
+        standardEnergy: result.standard_vs_optimized.standard_energy_kwh * periodScale,
+        optimizedEnergy: result.standard_vs_optimized.optimized_energy_kwh * periodScale,
+        savingsEnergy: result.standard_vs_optimized.savings_kwh * periodScale,
+        standardCost: result.standard_vs_optimized.standard_cost_eur * periodScale,
+        optimizedCost: result.standard_vs_optimized.optimized_cost_eur * periodScale,
+        savingsCost: result.standard_vs_optimized.savings_eur * periodScale,
+        standardCo2: result.standard_vs_optimized.standard_co2_kg * periodScale,
+        optimizedCo2: result.standard_vs_optimized.optimized_co2_kg * periodScale,
+        co2Saved: result.standard_vs_optimized.co2_saved_kg * periodScale,
+        savingsPct: result.standard_vs_optimized.savings_pct,
+        standardComfort: result.standard_vs_optimized.standard_comfort_score,
+        optimizedComfort: result.standard_vs_optimized.optimized_comfort_score,
+        comfortDelta: result.standard_vs_optimized.comfort_delta,
+        annualEnergySaved: result.summary.annual_savings_kwh / periodDivisor,
+        annualCostSaved: result.summary.annual_savings_eur / periodDivisor,
+        annualCo2Saved: result.summary.co2_saved_kg / periodDivisor,
+        campusPrudent: result.summary.realistic_campus_gain_eur / periodDivisor,
       }
     : null;
+  const presentationKpis = periodComparison
+    ? [
+        {
+          label: "Énergie économisée",
+          value: formatKwh(periodComparison.annualEnergySaved),
+          detail: activeRangeLabel.shortTitle,
+          accent: "cyan",
+        },
+        {
+          label: "Budget évité",
+          value: formatEuro(periodComparison.annualCostSaved),
+          detail: activeRangeLabel.shortTitle,
+          accent: "emerald",
+        },
+        {
+          label: "CO₂ évité",
+          value: formatCo2(periodComparison.annualCo2Saved),
+          detail: activeRangeLabel.shortTitle,
+          accent: "amber",
+        },
+        {
+          label: "Gain campus prudent",
+          value: formatEuro(periodComparison.campusPrudent),
+          detail: "avec marge de prudence",
+          accent: "blue",
+        },
+      ]
+    : [];
   const projectionSteps = result
     ? [
         {
@@ -584,8 +652,8 @@ export const App = () => {
       ]
     : [];
   const officialSavingsLabel = result
-    ? `${formatKwh(result.standard_vs_optimized.savings_kwh)} et ${formatEuro(result.standard_vs_optimized.savings_eur)} économisés vs salle 2`
-    : "Lancez une simulation pour lire l'économie officielle vs salle 2.";
+    ? `${formatKwh(periodComparison?.savingsEnergy ?? 0)} et ${formatEuro(periodComparison?.savingsCost ?? 0)} économisés vs salle standard`
+    : "Lancez une simulation pour lire l'économie officielle vs salle standard.";
   const roomSummaryRows = result
     ? rooms.map((room) => buildRoomSummary(room, standardRoom, result))
     : [];
@@ -810,189 +878,155 @@ export const App = () => {
           </div>
         </div>
 
-        <div className="time-range-switch reveal-up delay-200" aria-label="Période de lecture">
-          {[
-            { key: "week" as const, label: "Semaine" },
-            { key: "season" as const, label: "Saison" },
-            { key: "year" as const, label: "Année" },
-          ].map((item) => (
-            <button
-              className={activeRange === item.key ? "range-btn range-btn--active" : "range-btn"}
-              key={item.key}
-              type="button"
-              onClick={() => setActiveRange(item.key)}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="dashboard-top-modules reveal-up delay-200">
-          <div className="active-decision-module">
-            <small>Résultat principal</small>
-            <strong>
-              {result
-                ? `Gain campus prudent : ${formatEuro(result.summary.realistic_campus_gain_eur)}`
-                : "Lancez une simulation pour révéler le gain campus prudent"}
-            </strong>
-            <span className="module-secondary">
-              {result ? `Gain brut : ${formatEuro(result.campus.gross_gain_eur)} · Confort : ${optimizedRoom ? formatNumber(optimizedRoom.comfort_score, 1) : "—"} / 100` : "Le gain brut restera volontairement moins mis en avant."}
-            </span>
-            <div className="scanner-line" />
-          </div>
-          <div className="comfort-guardrail">
-            <div className="guardrail-item">
-              <div className="dot dot--cyan" />
-              <span>{currentPoint ? `${formatNumber(currentPoint.optimized_temp_c, 1)} °C` : "Température simulée"}</span>
+        <div className="presentation-dashboard reveal-up delay-200">
+          <div className="presentation-toolbar">
+            <div>
+              <span>Lecture de soutenance</span>
+              <strong>{activeRangeLabel.title}</strong>
+              <p>{activeRangeLabel.subtitle}</p>
             </div>
-            <div className="guardrail-item">
-              <div className="dot dot--emerald" />
-              <span>{result ? formatCo2(result.summary.co2_saved_kg) : "CO₂ évité"}</span>
-            </div>
-            <div className="guardrail-item">
-              <div className="dot dot--amber" />
-              <span>{currentPoint ? `${formatNumber(currentPoint.luminosity_pct, 0)} % lumière` : "Luminosité"}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="dashboard-grid dashboard-grid--enhanced">
-          <article className="panel panel--controls panel--controls-wide reveal-left delay-100">
-            <PanelHeading
-              title="Paramètres de simulation"
-              subtitle="Ces hypothèses pilotent la semaine générée et la projection campus."
-            />
-            <ScenarioControls
-              value={request}
-              loading={isLoading}
-              onChange={setRequest}
-              onSubmit={() => void runSimulation(request)}
-              onReset={resetSimulation}
-              onNewSeed={launchNewSeed}
-            />
-          </article>
-
-          <article className="panel panel--range reveal-right delay-100">
-            <PanelHeading title={`Lecture : ${activeRangeLabel.title}`} subtitle={activeRangeLabel.subtitle} />
-            {result ? (
-              activeRange === "week" ? (
-                <div className="range-summary-grid">
-                  <div><span>Consommation standard</span><strong>{formatKwh(result.standard_vs_optimized.standard_energy_kwh)}</strong></div>
-                  <div><span>Consommation optimisée</span><strong>{formatKwh(result.standard_vs_optimized.optimized_energy_kwh)}</strong></div>
-                  <div><span>Économie kWh</span><strong>{formatKwh(result.standard_vs_optimized.savings_kwh)}</strong></div>
-                  <div><span>Coût évité</span><strong>{formatEuro(result.standard_vs_optimized.savings_eur)}</strong></div>
-                  <div><span>CO₂ évité</span><strong>{formatCo2(result.standard_vs_optimized.co2_saved_kg)}</strong></div>
-                </div>
-              ) : activeRange === "season" ? (
-                <SeasonalPanel seasonal={result.seasonal} />
-              ) : (
-                <>
-                  <div className="range-summary-grid">
-                    <div><span>Salles déployées</span><strong>{formatNumber(result.campus.deployed_rooms, 1)}</strong></div>
-                    <div><span>Gain brut</span><strong>{formatEuro(result.campus.gross_gain_eur)}</strong></div>
-                    <div><span>Après foisonnement</span><strong>{formatEuro(result.campus.diversified_gain_eur)}</strong></div>
-                    <div><span>Gain prudent</span><strong>{formatEuro(result.campus.realistic_gain_eur)}</strong></div>
-                  </div>
-                  <div className="projection-pipeline" style={{ marginTop: "1.5rem" }}>
-                    {projectionSteps.map((step, index) => (
-                      <div className="projection-step" key={step.label}>
-                        <span>{index + 1}</span>
-                        <strong>{step.label}</strong>
-                        <em>{step.formula}</em>
-                        <b>{step.value}</b>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )
-            ) : (
-              <EmptyState title="Aucune période calculée" text="Lancez une simulation pour révéler les indicateurs." compact />
-            )}
-          </article>
-
-          <article className="panel panel--wide reveal-up delay-200">
-            <PanelHeading title="Focus salle" subtitle="Sélectionnez une salle pour en voir les détails." />
-            <div className="room-segmented-buttons">
-              {(["room_1", "room_2", "room_3"] as const).map((roomId) => (
+            <div className="time-range-switch time-range-switch--presentation" aria-label="Période de lecture">
+              {[
+                { key: "week" as const, label: "Semaine" },
+                { key: "month" as const, label: "Mois" },
+                { key: "year" as const, label: "Année" },
+              ].map((item) => (
                 <button
-                  className={selectedRoom === roomId ? "room-seg-btn room-seg-btn--active" : "room-seg-btn"}
-                  key={roomId}
+                  className={activeRange === item.key ? "range-btn range-btn--active" : "range-btn"}
+                  key={item.key}
                   type="button"
-                  onClick={() => setSelectedRoom(roomId)}
+                  onClick={() => setActiveRange(item.key)}
                 >
-                  {roomSelectLabel[roomId]}
+                  {item.label}
                 </button>
               ))}
             </div>
-            {classroom && result ? (
-              <div className="room-focus-detail">
-                <div className="room-focus-role">
-                  {classroom.id === "room_1" && "Repère de gaspillage maximal. Ce scénario volontairement défavorable sert de borne haute."}
-                  {classroom.id === "room_2" && "Référence officielle de comparaison. Le gain est toujours calculé par rapport à cette salle."}
-                  {classroom.id === "room_3" && "Algorithme optimisé : arbitrage heure par heure. L'écart avec la salle 2 donne le gain officiel."}
-                </div>
-                <div className="range-summary-grid">
-                  <div><span>Consommation</span><strong>{formatKwh(classroom.energy_kwh)}</strong></div>
-                  <div><span>Coût</span><strong>{formatEuro(classroom.cost_eur)}</strong></div>
-                  <div><span>CO₂</span><strong>{formatCo2(classroom.co2_kg)}</strong></div>
-                  <div><span>Confort</span><strong>{formatNumber(classroom.comfort_score, 1)} / 100</strong></div>
+          </div>
+
+          {result && periodComparison ? (
+            <>
+              <div className="comparison-board">
+                <article className="comparison-room comparison-room--standard">
+                  <span>Salle 2</span>
+                  <h3>Standard</h3>
+                  <p>Pilotage classique : horaires fixes, moins de réaction aux usages réels.</p>
+                  <dl>
+                    <div>
+                      <dt>Consommation</dt>
+                      <dd>{formatKwh(periodComparison.standardEnergy)}</dd>
+                    </div>
+                    <div>
+                      <dt>Coût</dt>
+                      <dd>{formatEuro(periodComparison.standardCost)}</dd>
+                    </div>
+                    <div>
+                      <dt>CO₂</dt>
+                      <dd>{formatCo2(periodComparison.standardCo2)}</dd>
+                    </div>
+                    <div>
+                      <dt>Confort</dt>
+                      <dd>{formatNumber(periodComparison.standardComfort, 1)} / 100</dd>
+                    </div>
+                  </dl>
+                </article>
+
+                <div className="comparison-difference">
+                  <span>Différence clé</span>
+                  <strong>{formatNumber(periodComparison.savingsPct, 1)} %</strong>
+                  <p>{officialSavingsLabel}</p>
                   <div>
-                    <span>{classroom.id === "room_1" ? "Surconsommation vs standard" : classroom.id === "room_2" ? "Référence" : "Économie vs standard"}</span>
-                    <strong>{formatDeltaPct(classroom.relative_savings_vs_standard_pct)}</strong>
+                    <small>{formatKwh(periodComparison.savingsEnergy)}</small>
+                    <small>{formatEuro(periodComparison.savingsCost)}</small>
+                    <small>{formatCo2(periodComparison.co2Saved)}</small>
+                    <small>Campus prudent : {formatEuro(periodComparison.campusPrudent)}</small>
                   </div>
                 </div>
+
+                <article className="comparison-room comparison-room--optimized">
+                  <span>Salle 3</span>
+                  <h3>Optimisée</h3>
+                  <p>Algorithme dynamique : occupation, météo, luminosité et confort guident l'action.</p>
+                  <dl>
+                    <div>
+                      <dt>Consommation</dt>
+                      <dd>{formatKwh(periodComparison.optimizedEnergy)}</dd>
+                    </div>
+                    <div>
+                      <dt>Coût</dt>
+                      <dd>{formatEuro(periodComparison.optimizedCost)}</dd>
+                    </div>
+                    <div>
+                      <dt>CO₂</dt>
+                      <dd>{formatCo2(periodComparison.optimizedCo2)}</dd>
+                    </div>
+                    <div>
+                      <dt>Confort</dt>
+                      <dd>{formatNumber(periodComparison.optimizedComfort, 1)} / 100</dd>
+                    </div>
+                  </dl>
+                </article>
               </div>
-            ) : (
-              <EmptyState title="Salle en attente" text="Lancez une simulation pour voir le détail de chaque salle." compact />
-            )}
-          </article>
 
-          <article className="panel panel--wide reveal-up">
-            <PanelHeading
-              title={`Consommation simulée — ${activeRangeLabel.title.toLowerCase()}`}
-              subtitle="kW par heure : pire scénario, standard et optimisé."
-            />
-            <ConsumptionChart data={result?.chart_points ?? []} />
-          </article>
-
-          <article className="panel reveal-up delay-100">
-            <PanelHeading
-              title="Température intérieure simulée"
-              subtitle={currentPoint ? `${formatNumber(currentPoint.optimized_temp_c, 1)} °C sur la salle optimisée` : "En attente de simulation"}
-            />
-            <TemperatureChart data={result?.chart_points ?? []} />
-          </article>
-
-          <article className="panel reveal-up delay-200">
-            <PanelHeading title="Détail par poste énergétique" subtitle="CVC, éclairage, ventilation et équipements." />
-            <Breakdown breakdown={result?.energy_breakdown ?? []} />
-          </article>
-
-          {result && (
-            <div className="dashboard-prudent-strip reveal-up delay-300">
-              <div className="prudent-strip-header">
-                <strong>Lecture prudente</strong>
-                <span>Résumé à retenir</span>
+              <div className="presentation-kpi-grid" aria-label="KPI principaux">
+                {presentationKpis.map((item) => (
+                  <article className={`presentation-kpi presentation-kpi--${item.accent}`} key={item.label}>
+                    <span>{item.label}</span>
+                    <strong>{item.value}</strong>
+                    <em>{item.detail}</em>
+                  </article>
+                ))}
               </div>
-              <div className="prudent-strip-items">
-                <div className="prudent-strip-item">
-                  <time>{formatNumber(result.campus.deployed_rooms, 1)}</time>
-                  <span>salles déployées</span>
-                </div>
-                <div className="prudent-strip-item">
-                  <time>{formatEuro(result.campus.diversified_gain_eur)}</time>
-                  <span>après foisonnement</span>
-                </div>
-                <div className="prudent-strip-item prudent-strip-item--highlight">
-                  <time>{formatEuro(result.campus.realistic_gain_eur)}</time>
-                  <span>gain prudent à retenir</span>
-                </div>
-                <div className="prudent-strip-item">
-                  <time>{formatKwh(result.summary.annual_savings_kwh)}</time>
-                  <span>économie annuelle</span>
-                </div>
+
+              <div className="evidence-grid">
+                <article className="panel panel--wide">
+                  <PanelHeading
+                    title="Courbe de consommation"
+                    subtitle="La courbe montre visuellement l'écart entre standard et optimisé sur la semaine simulée."
+                  />
+                  <ConsumptionChart data={result.chart_points} />
+                </article>
+                <article className="panel">
+                  <PanelHeading title="D'où viennent les économies ?" subtitle="Lecture par poste énergétique." />
+                  <Breakdown breakdown={result.energy_breakdown} />
+                </article>
               </div>
-            </div>
+
+              <details className="advanced-settings">
+                <summary>
+                  <span>Modifier les hypothèses avancées</span>
+                  <small>
+                    {result.metadata.weather_profile_label} · {formatNumber(request.room_count, 0)} salles · seed {formatNumber(request.random_seed, 0)}
+                  </small>
+                </summary>
+                <ScenarioControls
+                  value={request}
+                  loading={isLoading}
+                  onChange={setRequest}
+                  onSubmit={() => void runSimulation(request)}
+                  onReset={resetSimulation}
+                  onNewSeed={launchNewSeed}
+                />
+              </details>
+
+              <details className="projection-details">
+                <summary>
+                  <span>Voir le calcul prudent campus</span>
+                  <small>Pour expliquer pourquoi le chiffre final reste défendable.</small>
+                </summary>
+                <div className="projection-pipeline">
+                  {projectionSteps.map((step, index) => (
+                    <div className="projection-step" key={step.label}>
+                      <span>{index + 1}</span>
+                      <strong>{step.label}</strong>
+                      <em>{step.formula}</em>
+                      <b>{step.value}</b>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            </>
+          ) : (
+            <EmptyState title="Simulation en attente" text="Lancez le moteur pour afficher le comparatif standard vs optimisé." />
           )}
         </div>
       </section>
@@ -1842,7 +1876,7 @@ const ScenarioControls = ({ value, loading, onChange, onSubmit, onReset, onNewSe
     </label>
     <div className="scenario-actions">
       <button className="dashboard-run-button" type="submit" disabled={loading}>
-        {loading ? "Simulation en cours..." : "Lancer la simulation"}
+        {loading ? "Mise à jour..." : "Recalculer maintenant"}
       </button>
       <button className="dashboard-secondary-button" type="button" onClick={onReset} disabled={loading}>
         Réinitialiser
@@ -1851,7 +1885,7 @@ const ScenarioControls = ({ value, loading, onChange, onSubmit, onReset, onNewSe
         Nouvelle seed
       </button>
     </div>
-    <p className="control-help">Les valeurs sont bornées avant l'envoi pour éviter les paramètres invalides et les NaN.</p>
+    <p className="control-help">Chaque modification relance automatiquement le moteur et met à jour le comparatif principal.</p>
   </form>
 );
 
